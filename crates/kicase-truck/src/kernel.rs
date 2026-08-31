@@ -648,8 +648,9 @@ fn write_binary_stl(mesh: &TriangleMesh, path: &Path) -> Result<()> {
     let mut bytes = Vec::with_capacity(84 + mesh.indices.len() / 3 * 50);
     bytes.extend_from_slice(&[0u8; 80]);
     bytes.extend_from_slice(&((mesh.indices.len() / 3) as u32).to_le_bytes());
-    for triangle in mesh.indices.chunks_exact(3) {
-        let p: Vec<_> = triangle.iter().map(|i| mesh.positions[*i as usize]).collect();
+    let (triangles, _) = mesh.indices.as_chunks::<3>();
+    for triangle in triangles {
+        let p = triangle.map(|i| mesh.positions[i as usize]);
         let u = p[1] - p[0];
         let v = p[2] - p[0];
         let normal = u.cross(v).normalized().unwrap_or(kicase_geometry::types::Vector3::Z);

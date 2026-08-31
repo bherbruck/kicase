@@ -1,2 +1,10 @@
 [build]
 target-dir = "bin"
+
+# nng's Windows IPC transport calls IsValidSecurityDescriptor but never asks the
+# linker for the library it lives in. The plugin binary escapes that only
+# because the windowing stack happens to link advapi32 anyway; anything that
+# links nng without it — the examples in kicase-kicad, or any plainer consumer —
+# fails with an unresolved external. Asked for once, for the whole target.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=advapi32.lib"]
