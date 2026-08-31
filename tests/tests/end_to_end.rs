@@ -376,7 +376,9 @@ fn an_incremental_refresh_agrees_with_a_cold_build() {
 /// agree with a build that is genuinely different.
 fn enclosed_volume(mesh: &kicase_geometry::types::TriangleMesh) -> f64 {
     mesh.indices
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|triangle| {
             let p = |index: u32| {
                 let point = mesh.positions[index as usize];

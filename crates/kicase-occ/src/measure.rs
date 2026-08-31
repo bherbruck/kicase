@@ -20,7 +20,7 @@ pub(crate) fn volume(shape: &Shape) -> Result<f64> {
         .map_err(|e| GeometryError::kernel("mesh", e.to_string()))?;
 
     let mut total = 0.0;
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         let (a, b, c) = (mesh.vertices[tri[0]], mesh.vertices[tri[1]], mesh.vertices[tri[2]]);
         total += a.dot(b.cross(c)) / 6.0;
     }
@@ -66,7 +66,7 @@ pub(crate) fn solid_count(shape: &Shape) -> Result<usize> {
         }
     }
 
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         let (a, b, c) = (vertex_group[tri[0]], vertex_group[tri[1]], vertex_group[tri[2]]);
         union(&mut parent, a, b);
         union(&mut parent, b, c);
