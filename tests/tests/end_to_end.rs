@@ -22,8 +22,8 @@ fn example(name: &str) -> PathBuf {
 
 /// Copies an example board into a scratch directory so tests never write into
 /// the repository.
-fn scratch_copy(name: &str) -> (tempdir::TempDir, PathBuf) {
-    let dir = tempdir::TempDir::new("kicase-e2e").expect("temp dir");
+fn scratch_copy(name: &str) -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::Builder::new().prefix("kicase-e2e").tempdir().expect("temp dir");
     let board = dir.path().join(format!("{name}.kicad_pcb"));
     std::fs::copy(example(name), &board).expect("copy board");
     (dir, board)
@@ -227,8 +227,8 @@ fn validation_reports_a_dangling_graphic_without_rebinding_it() {
 /// Writes a self-contained board: a 50 x 30 PCB, a 2 mm wall drawn around it,
 /// a datum along the front wall, and a USB-sized opening 7.6 mm above the case
 /// bottom — the height a connector sitting on the board ends up at.
-fn generated_board() -> (tempdir::TempDir, PathBuf) {
-    let dir = tempdir::TempDir::new("kicase-usb").expect("temp dir");
+fn generated_board() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::Builder::new().prefix("kicase-usb").tempdir().expect("temp dir");
     let board = dir.path().join("usb.kicad_pcb");
 
     let mut items = String::new();
@@ -284,7 +284,7 @@ fn _config_type_is_used(_: &EnclosureConfig) {}
 /// and not in the `.scad` is a different enclosure, not a coarser one.
 #[test]
 fn the_openscad_derivative_carries_interior_walls() {
-    let dir = tempdir::TempDir::new("kicase-scad").expect("temp dir");
+    let dir = tempfile::Builder::new().prefix("kicase-scad").tempdir().expect("temp dir");
     let paths = kicase_export::paths::ExportPaths::new(dir.path());
     let config = EnclosureConfig::default();
 

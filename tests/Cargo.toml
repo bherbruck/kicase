@@ -17,7 +17,7 @@ kicase-export = { workspace = true }
 kicase-kicad = { workspace = true }
 kicase-app = { path = "../crates/kicase-app" }
 kicase-ui = { workspace = true }
-tempdir = "0.3"
+tempfile = "3"
 
 [features]
 # Runs the same geometry expectations against the pure-Rust backend.
