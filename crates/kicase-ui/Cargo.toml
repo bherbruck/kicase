@@ -1,0 +1,17 @@
+[package]
+name = "kicase-ui"
+description = "egui interface for the KiCase enclosure designer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+kicase-geometry = { workspace = true }
+kicase-model = { workspace = true }
+eframe = { version = "0.29", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui = "0.29"
+egui_glow = "0.29"
+glow = "0.14"
+png = "0.17"
+tracing = { workspace = true }

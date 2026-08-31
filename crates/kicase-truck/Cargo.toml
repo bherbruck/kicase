@@ -1,0 +1,15 @@
+[package]
+name = "kicase-truck"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kicase-geometry = { workspace = true }
+monstertruck-modeling = "0.4.0"
+monstertruck-topology = "0.4.0"
+monstertruck-geometry = "0.4.0"
+monstertruck-mesh = "0.4.0"
+monstertruck-meshing = "0.4.0"
+monstertruck-solid = "0.4.0"
+monstertruck-io = { version = "0.4.0", features = ["step"] }

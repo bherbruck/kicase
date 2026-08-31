@@ -1,0 +1,27 @@
+version = 1
+datum = []
+feature = []
+
+[layers]
+outline = "User.1"
+datums = "User.2"
+cuts = "User.3"
+top = "User.4"
+bottom = "User.5"
+solids = "User.4"
+
+[shell]
+wall = 2.0
+total_height = 15.0
+pcb_height = 6.0
+floor = 2.0
+
+[lid]
+thickness = 2.0
+fit_clearance = 0.2
+lip_depth = 3.0
+lip_thickness = 1.2
+
+[export]
+stl_tolerance = 0.05
+openscad = false

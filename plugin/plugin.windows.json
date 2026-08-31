@@ -1,0 +1,73 @@
+{
+  "identifier": "org.kicase.enclosure-designer",
+  "name": "KiCase Enclosure Designer",
+  "description": "Design simple parametric enclosures from the PCB editor and view them in KiCad's 3D viewer.",
+  "runtime": {
+    "type": "exec"
+  },
+  "actions": [
+    {
+      "identifier": "designer",
+      "name": "Enclosure Designer",
+      "description": "Open the enclosure designer for this board.",
+      "scopes": [
+        "pcb"
+      ],
+      "entrypoint": "kicase.exe",
+      "args": [
+        "designer"
+      ],
+      "show-button": true,
+      "icons-light": [
+        "icons/kicase-light-24.png",
+        "icons/kicase-light-48.png"
+      ],
+      "icons-dark": [
+        "icons/kicase-dark-24.png",
+        "icons/kicase-dark-48.png"
+      ]
+    },
+    {
+      "identifier": "rebuild",
+      "name": "Rebuild Enclosure",
+      "description": "Regenerate the enclosure geometry and refresh the 3D preview.",
+      "scopes": [
+        "pcb"
+      ],
+      "entrypoint": "kicase.exe",
+      "args": [
+        "rebuild"
+      ],
+      "show-button": true,
+      "icons-light": [
+        "icons/kicase-light-24.png",
+        "icons/kicase-light-48.png"
+      ],
+      "icons-dark": [
+        "icons/kicase-dark-24.png",
+        "icons/kicase-dark-48.png"
+      ]
+    },
+    {
+      "identifier": "export",
+      "name": "Export Enclosure",
+      "description": "Write STEP and STL files for the enclosure without changing the board.",
+      "scopes": [
+        "pcb"
+      ],
+      "entrypoint": "kicase.exe",
+      "args": [
+        "export"
+      ],
+      "show-button": false,
+      "icons-light": [
+        "icons/kicase-light-24.png",
+        "icons/kicase-light-48.png"
+      ],
+      "icons-dark": [
+        "icons/kicase-dark-24.png",
+        "icons/kicase-dark-48.png"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+[package]
+name = "kicase-export"
+description = "STEP, STL, OpenSCAD and KiCad preview output for KiCase"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+kicase-geometry = { workspace = true }
+kicase-model = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

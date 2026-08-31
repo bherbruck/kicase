@@ -1,0 +1,13 @@
+/bin/
+target/
+**/*.rs.bk
+
+# Generated enclosure output is reproducible; the settings file is not.
+.enclosure/generated/
+.enclosure/openscad/
+.enclosure/kicase.pretty/
+
+# KiCad working files
+*.kicad_prl
+*-backups/
+fp-info-cache

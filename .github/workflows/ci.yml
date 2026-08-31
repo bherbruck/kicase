@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # What actually ships. The CAD kernel is pure Rust, so this needs no C++
+  # toolchain on any platform — only cmake, for the nng transport behind
+  # KiCad's IPC API.
+  ship:
+    name: Build and test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libgl1-mesa-dev libx11-dev libxcursor-dev \
+            libxrandr-dev libxi-dev libwayland-dev libxkbcommon-dev
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the plugin
+        run: cargo build --release -p kicase-app
+      # Release, not debug: the truck backend is roughly 30x slower unoptimised,
+      # which turns a half-minute suite into a quarter of an hour.
+      - name: Test
+        run: >
+          cargo test --release
+          -p kicase-geometry -p kicase-model -p kicase-kicad
+          -p kicase-truck -p kicase-export -p kicase-ui -p kicase-app
+        timeout-minutes: 30
+
+  # The geometry suite runs the same expectations against both CAD backends and
+  # checks they agree. Only this job needs OpenCascade, so only this job pays
+  # for compiling it.
+  reference:
+    name: Cross-backend geometry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libgl1-mesa-dev libx11-dev libxcursor-dev \
+            libxrandr-dev libxi-dev libwayland-dev libxkbcommon-dev
+      # OpenCascade is compiled from source on the first build and cached; it is
+      # by far the longest part of CI.
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+        timeout-minutes: 90
+      - name: Test against the reference backend
+        run: cargo test --release --workspace
+        timeout-minutes: 30
+      - name: Test against the shipping backend
+        run: cargo test --release --workspace --features kicase-tests/truck
+        timeout-minutes: 30

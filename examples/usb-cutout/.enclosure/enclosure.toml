@@ -1,0 +1,43 @@
+version = 1
+
+[layers]
+outline = "User.1"
+datums = "User.2"
+cuts = "User.3"
+top = "User.4"
+bottom = "User.5"
+solids = "User.6"
+
+[shell]
+wall = 2.0
+total_height = 15.0
+pcb_height = 5.0
+floor = 2.0
+
+[lid]
+thickness = 2.0
+fit_clearance = 0.2
+lip_depth = 3.0
+lip_thickness = 1.2
+
+[export]
+stl_tolerance = 0.05
+openscad = true
+
+[[datum]]
+id = "front"
+graphic_uuid = "d01b3ee1-cb1a-4061-a1c0-e7a64bd27f75"
+normal = "auto"
+
+[[feature]]
+id = "usb"
+graphic_uuid = "0f66ab32-447b-403a-aa40-9cd5dd08b379"
+datum = "front"
+clearance = 0.3
+enabled = true
+
+[[feature]]
+id = "led"
+graphic_uuid = "734e357c-22c7-42b1-bdce-51d8d7233734"
+clearance = 0.0
+enabled = true

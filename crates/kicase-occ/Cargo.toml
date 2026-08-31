@@ -1,0 +1,13 @@
+[package]
+name = "kicase-occ"
+description = "OpenCascade B-rep backend for KiCase"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+kicase-geometry = { workspace = true }
+opencascade = "0.3.0"
+glam = "0.24"
+tracing = { workspace = true }

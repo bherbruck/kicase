@@ -1,0 +1,24 @@
+[package]
+name = "kicase-tests"
+description = "Geometry golden tests and board fixtures for KiCase"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+kicase-geometry = { workspace = true }
+kicase-model = { workspace = true }
+
+[dev-dependencies]
+kicase-occ = { workspace = true }
+kicase-truck = { path = "../crates/kicase-truck" }
+kicase-export = { workspace = true }
+kicase-kicad = { workspace = true }
+kicase-app = { path = "../crates/kicase-app" }
+kicase-ui = { workspace = true }
+tempdir = "0.3"
+
+[features]
+# Runs the same geometry expectations against the pure-Rust backend.
+truck = []

@@ -1,0 +1,32 @@
+[package]
+name = "kicase-app"
+description = "KiCad enclosure designer: executable IPC plugin and command line tool"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "kicase_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kicase"
+path = "src/main.rs"
+
+[dependencies]
+kicase-geometry = { workspace = true }
+kicase-model = { workspace = true }
+kicase-kicad = { workspace = true }
+kicase-truck = { path = "../kicase-truck" }
+kicase-export = { workspace = true }
+kicase-ui = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+serde_json = "1"
+
