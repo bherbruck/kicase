@@ -189,17 +189,27 @@ impl DesignerBackend for AppBackend {
         let dir = self.project.dir.display().to_string();
         let config_snapshot = self.project.config.clone();
         let needs_setup = self.project.is_new;
-        let layers = layer_roles(&config_snapshot);
+        // Only once layers have actually been claimed. Until then the mapping
+        // is `LayerMapping::default()` — a guess at User.1..User.6 — and
+        // showing it as fact invites drawing on a layer that setup will then
+        // skip precisely *because* it is now drawn on, stranding the work.
+        let layers = if needs_setup { Vec::new() } else { layer_roles(&config_snapshot) };
         let (board_layers, drawn_on) = match self.project.read_board() {
             Ok(reading) => (reading.layers, reading.used_layers),
             Err(_) => (Vec::new(), Vec::new()),
         };
-        let misnamed_layers = kicase_kicad::layers::misnamed_layers(
-            &config_snapshot.layers,
-            &board_layers,
-            &drawn_on,
-            !needs_setup,
-        );
+        // Same reason: naming layers the mapping only guessed at would put
+        // KiCase's names on layers setup may not end up choosing.
+        let misnamed_layers = if needs_setup {
+            Vec::new()
+        } else {
+            kicase_kicad::layers::misnamed_layers(
+                &config_snapshot.layers,
+                &board_layers,
+                &drawn_on,
+                true,
+            )
+        };
 
         // One read, one build, shared by everything below.
         let built = match self.ensure_built(config) {
