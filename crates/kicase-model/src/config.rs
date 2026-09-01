@@ -276,10 +276,13 @@ impl EnclosureConfig {
                 supported: SCHEMA_VERSION,
             });
         }
-        let config: EnclosureConfig =
-            toml::from_str(text).map_err(|e| ModelError::Parse(e.to_string()))?;
-        config.validate()?;
-        Ok(config)
+        // Deliberately not validated here. A setting that cannot build is
+        // still a setting the user has to be able to see and correct, and the
+        // place they correct it is the designer — which cannot open if loading
+        // the project it is meant to fix is what fails. `Enclosure::resolve`
+        // validates at the point of building, which is where the answer
+        // actually matters.
+        Ok(toml::from_str(text).map_err(|e| ModelError::Parse(e.to_string()))?)
     }
 
     pub fn to_toml(&self) -> Result<String> {
@@ -461,6 +464,10 @@ mod tests {
         assert!(matches!(err, ModelError::Parse(_)), "got {err:?}");
     }
 
+    /// Loading and validating are separate on purpose: a project whose numbers
+    /// cannot build still has to open, because the designer is where they get
+    /// corrected. So these check `validate`, which is what the build calls,
+    /// rather than the parse.
     #[test]
     fn rejects_a_cutout_pointing_at_a_missing_datum() {
         let text = r#"
@@ -471,14 +478,16 @@ mod tests {
             graphic_uuid = "abc"
             datum = "front"
         "#;
-        let err = EnclosureConfig::from_toml(text).expect_err("dangling datum must fail");
+        let config = EnclosureConfig::from_toml(text).expect("a bad datum still loads");
+        let err = config.validate().expect_err("dangling datum must fail to validate");
         assert!(matches!(err, ModelError::UnknownDatum { .. }), "got {err:?}");
     }
 
     #[test]
     fn rejects_zero_wall_thickness() {
         let text = "version = 1\n\n[shell]\nwall = 0.0\n";
-        let err = EnclosureConfig::from_toml(text).expect_err("zero wall must fail");
+        let config = EnclosureConfig::from_toml(text).expect("a zero wall still loads");
+        let err = config.validate().expect_err("zero wall must fail to validate");
         assert!(matches!(err, ModelError::NonPositive { name: "wall thickness", .. }));
     }
 

@@ -578,6 +578,39 @@ fn a_footprint_model_is_loaded_placed_and_drawn() {
 
 /// A model that is missing is a warning the user sees, and the enclosure still
 /// builds.
+/// A project whose numbers cannot build still has to open. The designer is
+/// where those numbers get corrected, so refusing to load makes the mistake
+/// unfixable from the UI: pressing the toolbar button does nothing at all and
+/// leaves a dead process behind, which is what a hung plugin looks like.
+#[test]
+fn a_project_that_cannot_build_still_opens_and_says_why() {
+    use kicase_geometry::units::mm;
+    use kicase_ui::DesignerBackend;
+
+    let (_dir, board) = generated_board();
+    let mut project = Project::open_file(&board).expect("opens");
+    pipeline::init(&mut project).expect("initializes");
+
+    // The PCB sitting inside the floor: buildable settings, impossible case.
+    project.config.shell.floor = mm(2.0);
+    project.config.shell.pcb_height = mm(2.0);
+    project.save_config().expect("writes the settings");
+
+    // Re-open from disk, which is what pressing the toolbar button does.
+    let reopened = Project::open_file(&board).expect("a project that cannot build still loads");
+    let config = reopened.config.clone();
+    let mut backend = kicase_app::AppBackend::new(reopened);
+    let data = backend.refresh(&config).expect("the window still gets its data");
+
+    assert!(
+        data.problems.iter().any(|p| p.contains("PCB")),
+        "the reason must reach the window: {:?}",
+        data.problems
+    );
+    // And the setting that caused it is still there to be corrected.
+    assert_eq!(config.shell.pcb_height, mm(2.0));
+}
+
 /// A model that exists but is not readable fails on the loader thread, long
 /// after the refresh that would have collected the complaint. The count alone
 /// cannot carry that: a failed model counts as finished, so a viewport quietly

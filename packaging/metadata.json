@@ -1,0 +1,15 @@
+{
+  "$schema": "https://go.kicad.org/pcm/schemas/v1",
+  "name": "KiCase Enclosure Designer",
+  "description": "Draw an enclosure on the board's user layers and get real STEP and STL",
+  "description_full": "KiCase reads the board, treats the drawings on its enclosure user layers as physical features, and generates real B-rep geometry.\n\nEverything geometric is drawn rather than configured. A drawn line is the centre of a wall and its KiCad stroke width is that wall's thickness, per segment. Corner radii are drawn arcs. Cuts, datums, added solids and interior walls are shapes on layers, bound by UUID, so what KiCad renders in 2D is what the case is in 3D.\n\nIt brings its own 3D window: orbit, view cube, per-part visibility, a sweepable section plane, and the board's own components loaded from their 3D models, so a connector can be checked against a wall without leaving KiCad.\n\nThe CAD kernel is pure Rust, so there is nothing to compile and no runtime to install.",
+  "identifier": "com.github.bherbruck.kicase",
+  "type": "plugin",
+  "author": {
+    "name": "bherbruck",
+    "contact": { "web": "https://github.com/bherbruck/kicase" }
+  },
+  "license": "MIT",
+  "resources": { "homepage": "https://github.com/bherbruck/kicase" },
+  "versions": []
+}
