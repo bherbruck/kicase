@@ -87,6 +87,19 @@ pub struct DesignerData {
     /// Set when the wall thickness comes from the width of the drawn outline,
     /// in which case the wall setting is inert.
     pub drawn_wall: Option<String>,
+    /// Enclosure layers still carrying their `User.N` name, as (layer, wanted).
+    /// Empty once the board names them.
+    pub misnamed_layers: Vec<(String, String)>,
+    /// Which KiCad layer plays which role, as (role, layer). KiCad 10 has no
+    /// IPC command for renaming a user layer, so on most boards these stay
+    /// called User.1 and friends however they are set up — which makes saying
+    /// plainly where to draw the difference between usable and not.
+    pub layers: Vec<(String, String)>,
+    /// Set while the board has no enclosure layers yet. Setting them up is the
+    /// one thing that has to happen before anything can be drawn, so the
+    /// window says so at the top rather than leaving it to a button in a row
+    /// of five at the bottom of a scrolling panel.
+    pub needs_setup: bool,
     pub problems: Vec<String>,
 }
 
@@ -120,6 +133,13 @@ pub trait DesignerBackend {
 
     /// Claims layers, detects mounting holes and writes `enclosure.toml`.
     fn initialize(&mut self, config: &mut EnclosureConfig) -> Result<ActionReport, String>;
+
+    /// Writes the enclosure layer names onto the board itself.
+    ///
+    /// Separate from [`initialize`](Self::initialize) because it edits the
+    /// board file rather than going through KiCad, which is safe only while
+    /// KiCad is not holding that file open.
+    fn name_layers(&mut self, config: &EnclosureConfig) -> Result<ActionReport, String>;
 
     /// Regenerates geometry and updates KiCad.
     fn rebuild(&mut self, config: &EnclosureConfig) -> Result<ActionReport, String>;

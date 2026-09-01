@@ -56,9 +56,18 @@ model. Close and reopen it, or press **Alt+3** again.
 
 ### There is no command for renaming a user layer
 
-The 59 commands in 10.0.1/10.0.3 include no layer-rename operation. The board
-stackup carries a `user_name` per layer and round-trips it, but user layers are
-not generally part of the stackup, so this only sometimes helps.
+The 59 commands in 10.0.1/10.0.3 include no layer-rename operation, and neither
+does KiCad upstream: `api/proto/board/board_commands.proto` on master carries
+`GetBoardLayerName` and `GetBoardLayerByName` with no setter of any kind, and
+nothing that creates or adds a layer. `SetBoardEnabledLayers` only enables and
+disables layers that already exist, and the layer set itself is fixed by the
+board format at `User.1`..`User.45`. The board stackup carries a `user_name` per
+layer and round-trips it, but user layers are not generally part of the stackup,
+so that route only sometimes helps.
+
+Checked against upstream master rather than against `kicad-ipc-rs`, because the
+binding does lag: 0.5.1 has no `GetBoardLayerByName`, which upstream has. The
+rename command is absent from both.
 
 **Consequence.** KiCase enables and records the layers it claims, attempts the
 stackup route, and otherwise prints the exact names to set by hand in

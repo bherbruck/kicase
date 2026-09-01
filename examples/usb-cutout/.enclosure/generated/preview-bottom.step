@@ -1,7 +1,7 @@
 ISO-10303-21;
 HEADER;
 FILE_DESCRIPTION(('Shape Data from monstertruck'), '2;1');
-FILE_NAME('', '2026-08-31 04:19:41.999803434', (''), (''), 'monstertruck', 'KiCase', '');
+FILE_NAME('', '2026-09-01 00:23:45.897204393', (''), (''), 'monstertruck', 'KiCase', '');
 FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));
 ENDSEC;
 DATA;

@@ -64,6 +64,30 @@ impl Project {
         Ok(Project { dir, config, origin: Origin::File(board.to_path_buf()), is_new })
     }
 
+    /// The board file this project is about.
+    ///
+    /// Known outright when working from a file. With KiCad on the other end
+    /// only the project directory is available, so the board is the one
+    /// `.kicad_pcb` in it — a KiCad project has exactly one.
+    pub fn board_file(&self) -> Result<PathBuf> {
+        if let Origin::File(path) = &self.origin {
+            return Ok(path.clone());
+        }
+        let mut boards: Vec<PathBuf> = std::fs::read_dir(&self.dir)
+            .with_context(|| format!("reading {}", self.dir.display()))?
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|path| path.extension().is_some_and(|e| e == "kicad_pcb"))
+            .collect();
+        boards.sort();
+        match boards.len() {
+            1 => Ok(boards.remove(0)),
+            0 => Err(anyhow!("no .kicad_pcb in {}", self.dir.display())),
+            n => {
+                Err(anyhow!("{n} board files in {}; cannot tell which is open", self.dir.display()))
+            },
+        }
+    }
+
     /// Opens whichever source is available: KiCad if a board path was not
     /// given, otherwise the file.
     pub fn open(board: Option<&Path>) -> Result<Self> {

@@ -247,3 +247,82 @@ mod tests {
         assert!(!plan.unchanged);
     }
 }
+
+/// Layers whose name on the board does not match the one KiCase gave the role,
+/// as `(canonical, wanted)` pairs.
+///
+/// The names are cosmetic — KiCase binds by canonical name, so a board whose
+/// layers are still called `User.1` works exactly as well. They are worth
+/// setting anyway, because a layer called `Enclosure.Cuts` tells you what it is
+/// while `User.3` does not, and the layer *is* the instruction here.
+pub fn misnamed_layers(
+    mapping: &LayerMapping,
+    layers: &[crate::board::BoardLayer],
+) -> Vec<(String, String)> {
+    mapping
+        .all()
+        .iter()
+        .zip(LAYER_DISPLAY_NAMES)
+        .filter(|(canonical, wanted)| {
+            layers
+                .iter()
+                .find(|layer| layer.canonical == **canonical)
+                .is_none_or(|layer| layer.display.as_deref() != Some(*wanted))
+        })
+        .map(|(canonical, wanted)| (canonical.to_string(), wanted.to_string()))
+        .collect()
+}
+
+#[cfg(test)]
+mod misnamed_tests {
+    use super::*;
+    use crate::board::BoardLayer;
+
+    fn layer(canonical: &str, display: Option<&str>) -> BoardLayer {
+        BoardLayer {
+            id: 0,
+            canonical: canonical.to_string(),
+            display: display.map(|d| d.to_string()),
+        }
+    }
+
+    #[test]
+    fn a_board_that_names_every_layer_needs_nothing() {
+        let mapping = LayerMapping::default();
+        let layers: Vec<BoardLayer> = mapping
+            .all()
+            .iter()
+            .zip(LAYER_DISPLAY_NAMES)
+            .map(|(canonical, display)| layer(canonical, Some(display)))
+            .collect();
+        assert!(misnamed_layers(&mapping, &layers).is_empty());
+    }
+
+    #[test]
+    fn an_unnamed_layer_is_reported_with_the_name_it_should_have() {
+        let mapping = LayerMapping::default();
+        let layers = vec![layer("User.1", None)];
+        let missing = misnamed_layers(&mapping, &layers);
+        assert!(missing.contains(&("User.1".to_string(), "Enclosure".to_string())));
+        // The five that are not on the board at all are missing too.
+        assert_eq!(missing.len(), 6);
+    }
+
+    /// The case that caught this: a layer carrying a KiCase name, but the wrong
+    /// one for the role it was mapped to. Right name, wrong slot, still wrong.
+    #[test]
+    fn a_layer_named_for_another_role_still_counts_as_misnamed() {
+        let mapping = LayerMapping::default();
+        let mut layers: Vec<BoardLayer> = mapping
+            .all()
+            .iter()
+            .zip(LAYER_DISPLAY_NAMES)
+            .map(|(canonical, display)| layer(canonical, Some(display)))
+            .collect();
+        layers[3].display = Some("Enclosure.Solids".to_string());
+        assert_eq!(
+            misnamed_layers(&mapping, &layers),
+            vec![("User.4".to_string(), "Enclosure.Top".to_string())]
+        );
+    }
+}

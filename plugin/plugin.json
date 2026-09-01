@@ -24,7 +24,7 @@
       "scopes": ["pcb"],
       "entrypoint": "kicase",
       "args": ["rebuild"],
-      "show-button": true,
+      "show-button": false,
       "icons-light": ["icons/kicase-light-24.png", "icons/kicase-light-48.png"],
       "icons-dark": ["icons/kicase-dark-24.png", "icons/kicase-dark-48.png"]
     },

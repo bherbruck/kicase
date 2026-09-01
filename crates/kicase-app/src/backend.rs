@@ -188,6 +188,14 @@ impl DesignerBackend for AppBackend {
         let live = self.project.origin.session().map(|s| s.version().to_string());
         let dir = self.project.dir.display().to_string();
         let config_snapshot = self.project.config.clone();
+        let needs_setup = self.project.is_new;
+        let layers = layer_roles(&config_snapshot);
+        let board_layers = match self.project.read_board() {
+            Ok(reading) => reading.layers,
+            Err(_) => Vec::new(),
+        };
+        let misnamed_layers =
+            kicase_kicad::layers::misnamed_layers(&config_snapshot.layers, &board_layers);
 
         // One read, one build, shared by everything below.
         let built = match self.ensure_built(config) {
@@ -195,9 +203,14 @@ impl DesignerBackend for AppBackend {
             Err(problem) => {
                 // The board may simply not be ready to build yet; the window
                 // still has to show why.
+                // Where to draw matters most here: this is the board with
+                // nothing on it yet, which is why the build had nothing to do.
                 return Ok(DesignerData {
                     project_dir: dir,
                     kicad_version: live,
+                    needs_setup,
+                    layers,
+                    misnamed_layers,
                     problems: vec![problem],
                     ..DesignerData::default()
                 });
@@ -210,6 +223,9 @@ impl DesignerBackend for AppBackend {
         let mut data = DesignerData {
             project_dir: dir,
             kicad_version: live,
+            needs_setup,
+            layers,
+            misnamed_layers,
             board_summary: format!(
                 "{} outline segment(s), {} enclosure graphic(s), {} mounting-hole candidate(s)",
                 reading.source.board_outline.len(),
@@ -335,6 +351,30 @@ impl DesignerBackend for AppBackend {
             .collect();
 
         Ok(data)
+    }
+
+    fn name_layers(&mut self, config: &EnclosureConfig) -> Result<ActionReport, String> {
+        self.apply(config);
+        let board = self.project.board_file().map_err(|e| e.to_string())?;
+        let reading = self.project.read_board().map_err(|e| e.to_string())?;
+        let wanted =
+            kicase_kicad::layers::misnamed_layers(&self.project.config.layers, &reading.layers);
+        if wanted.is_empty() {
+            return Ok(ActionReport::ok("The layers are already named"));
+        }
+        kicase_kicad::rename::name_layers(&board, &wanted).map_err(|e| e.to_string())?;
+
+        let mut report = ActionReport::ok(format!("Named {} layer(s) on the board", wanted.len()));
+        for (canonical, display) in &wanted {
+            report = report.with(format!("{canonical} is now {display}"));
+        }
+        if self.project.origin.session().is_some() {
+            report = report.with(
+                "KiCad has this board open and does not know it changed. Close it without \
+                 saving and reopen, or KiCad's next save puts the old names back.",
+            );
+        }
+        Ok(report)
     }
 
     fn initialize(&mut self, config: &mut EnclosureConfig) -> Result<ActionReport, String> {
@@ -539,4 +579,20 @@ fn to_action(headline: &str, report: RebuildReport) -> ActionReport {
         action.lines.push(note.clone());
     }
     action
+}
+
+/// Which KiCad layer plays which role, in the order they are used.
+fn layer_roles(config: &EnclosureConfig) -> Vec<(String, String)> {
+    let l = &config.layers;
+    [
+        ("outline", &l.outline),
+        ("datums", &l.datums),
+        ("cuts", &l.cuts),
+        ("top", &l.top),
+        ("bottom", &l.bottom),
+        ("solids", &l.solids),
+    ]
+    .into_iter()
+    .map(|(role, layer)| (role.to_string(), layer.clone()))
+    .collect()
 }

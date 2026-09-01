@@ -38,7 +38,7 @@
       "args": [
         "rebuild"
       ],
-      "show-button": true,
+      "show-button": false,
       "icons-light": [
         "icons/kicase-light-24.png",
         "icons/kicase-light-48.png"

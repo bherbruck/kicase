@@ -231,7 +231,23 @@ fn run(cli: &Cli) -> Result<()> {
     });
     match cli.command.as_ref().unwrap_or(&default) {
         Command::Designer(args) => {
-            let project = Project::open(args.board.as_deref())?;
+            let mut project = Project::open(args.board.as_deref())?;
+            // Opening the designer on a board that has never been set up is the
+            // normal way to start, and it arrives here by someone pressing the
+            // toolbar button in KiCad. Claiming the layers is the one thing
+            // that has to happen first, it can only happen with KiCad running,
+            // and KiCad is running — so do it rather than send them to a
+            // terminal to ask for it.
+            // Only with KiCad on the other end: claiming layers renames them on
+            // the board, which a board file cannot do. Left alone otherwise, so
+            // the window can say what is missing instead of recording a setup
+            // that did not happen.
+            if project.is_new && project.origin.session().is_some() {
+                match pipeline::init(&mut project) {
+                    Ok(report) => print_report("Set up the enclosure layers", &report),
+                    Err(err) => eprintln!("warning: could not set up the layers: {err:#}"),
+                }
+            }
             let config = project.config.clone();
             let backend = AppBackend::new(project);
             let section =

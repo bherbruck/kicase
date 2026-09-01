@@ -159,6 +159,7 @@ impl DesignerApp {
         self.busy_label = Some(label);
         let result = match action {
             Action::Initialize => self.backend.initialize(&mut self.config),
+            Action::NameLayers => self.backend.name_layers(&self.config),
             Action::Rebuild => self.backend.rebuild(&self.config),
             Action::Export(kind) => self.backend.export(&self.config, kind),
         };
@@ -190,6 +191,7 @@ impl DesignerApp {
 
 enum Action {
     Initialize,
+    NameLayers,
     Rebuild,
     Export(ExportKind),
 }
@@ -228,6 +230,70 @@ impl eframe::App for DesignerApp {
             }
             if !self.data.board_summary.is_empty() {
                 ui.label(RichText::new(&self.data.board_summary).small());
+            }
+            // Until the layers exist there is nothing to draw on, so this is
+            // the only thing worth saying and the only button worth pressing.
+            // It goes here rather than in the row at the bottom, because a
+            // first-time user has no reason to scroll past a panel of settings
+            // to find the step that comes before all of them.
+            if self.data.needs_setup {
+                ui.add_space(6.0);
+                ui.horizontal_wrapped(|ui| {
+                    if ui
+                        .button(RichText::new("Set up the enclosure layers").strong())
+                        .on_hover_text(
+                            "Names six user layers and writes enclosure.toml. \
+                             Needs KiCad running, since renaming layers changes the board.",
+                        )
+                        .clicked()
+                    {
+                        self.run_action("Setting up", Action::Initialize);
+                    }
+                    let why = if self.data.kicad_version.is_some() {
+                        "this board has no enclosure layers yet"
+                    } else {
+                        "no enclosure layers yet — open this from KiCad's toolbar, \
+                         since naming them changes the board"
+                    };
+                    ui.label(RichText::new(why).color(Color32::from_rgb(200, 150, 40)));
+                });
+            }
+            // Where to draw. KiCad cannot rename a user layer over IPC, so
+            // these usually keep their User.N names no matter how the board was
+            // set up; without this the roles live only in a file nobody reads.
+            if !self.data.layers.is_empty() {
+                ui.add_space(6.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Draw on:").small().strong());
+                    for (role, layer) in &self.data.layers {
+                        ui.label(RichText::new(format!("{layer} = {role}")).small().weak());
+                    }
+                });
+            }
+            // Offered only while there is something to do, and honest about the
+            // cost: this one writes the board file behind KiCad's back, because
+            // the API has no way to ask KiCad to do it.
+            if !self.data.misnamed_layers.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    let n = self.data.misnamed_layers.len();
+                    if ui
+                        .button("Name these layers on the board")
+                        .on_hover_text(
+                            "Writes the names into the .kicad_pcb using KiCad's own Python, \
+                             since the API cannot rename a layer. Save and close the board in \
+                             KiCad first: KiCad will not notice the change, and its next save \
+                             would put the old names back.",
+                        )
+                        .clicked()
+                    {
+                        self.run_action("Naming layers", Action::NameLayers);
+                    }
+                    ui.label(
+                        RichText::new(format!("{n} still called User.N"))
+                            .small()
+                            .color(Color32::from_rgb(200, 150, 40)),
+                    );
+                });
             }
             ui.add_space(4.0);
         });
