@@ -1,5 +1,6 @@
 //! Wires the designer window to the project and the build pipeline.
 
+use crate::components::{ComponentRequest, ModelCache, ModelLoader};
 use crate::pipeline::{self, RebuildOptions, RebuildReport};
 use crate::project::Project;
 use kicase_geometry::kernel::CadKernel;
@@ -10,7 +11,9 @@ use kicase_model::EnclosureConfig;
 use kicase_truck::TruckKernel as Kernel;
 use kicase_ui::{
     ActionReport, DesignerBackend, DesignerData, ExportKind, GraphicRow, HoleInfo, ItemInfo,
+    ModelProgress,
 };
+use std::sync::Arc;
 
 /// Everything derived from one reading of the board, kept so that a single
 /// refresh does the work once instead of three times over.
@@ -20,6 +23,8 @@ struct Built {
     config: EnclosureConfig,
     reading: kicase_kicad::board::BoardReading,
     enclosure: kicase_model::Enclosure,
+    /// The board and the two enclosure parts. Components are held apart, in
+    /// [`Components`], because they are invalidated by different things.
     scene: kicase_model::Scene,
     exterior: Option<String>,
     problems: Vec<String>,
@@ -82,10 +87,43 @@ impl Parts {
     }
 }
 
+/// The component models as they currently stand.
+///
+/// Keyed on the placements and nothing else. An enclosure edit that does not
+/// move the board leaves this alone; moving a footprint rebuilds it without
+/// touching the shell. `ready` is part of the key too, so a model that arrives
+/// from the loader thread after the part was merged gets merged in.
+struct Components {
+    request: ComponentRequest,
+    /// The distinct model files, and how many of them have finished loading.
+    wanted: Vec<std::path::PathBuf>,
+    ready: usize,
+    part: kicase_model::ScenePart,
+}
+
+impl Default for Components {
+    fn default() -> Self {
+        Components {
+            request: ComponentRequest::default(),
+            wanted: Vec::new(),
+            ready: 0,
+            part: kicase_model::components_part(std::iter::empty()),
+        }
+    }
+}
+
 pub struct AppBackend {
     project: Project,
     watcher: Option<crate::watcher::BoardWatcher>,
     built: Option<Built>,
+    /// Model meshes, kept here rather than on [`Built`] so a board that
+    /// momentarily fails to read does not throw away seconds of loading.
+    models: ModelCache,
+    loader: ModelLoader,
+    components: Components,
+    /// The enclosure parts and the components as one scene, so a refresh that
+    /// changed neither hands back the same allocation instead of a deep copy.
+    composed: Option<Arc<kicase_model::Scene>>,
     /// Kept so the watcher can be restarted once a waker is available.
     source_for_waker: Option<()>,
 }
@@ -104,7 +142,16 @@ impl AppBackend {
         // The watcher starts without a waker; the window supplies one as soon
         // as it has a context to wake.
         let watcher = source.map(|source| crate::watcher::BoardWatcher::start(source, None));
-        AppBackend { project, watcher, built: None, source_for_waker: None }
+        AppBackend {
+            project,
+            watcher,
+            built: None,
+            models: ModelCache::default(),
+            loader: ModelLoader::start(),
+            components: Components::default(),
+            composed: None,
+            source_for_waker: None,
+        }
     }
 
     /// Reads and builds, doing only the part of it that has actually moved.
@@ -118,12 +165,17 @@ impl AppBackend {
         let enclosure =
             kicase_model::Enclosure::resolve(config, &reading.source).map_err(|e| e.to_string())?;
 
+        // Components come from the footprints, not from the enclosure, so they
+        // are worked out before the branch and reused across both arms of it.
+        self.update_components(&reading, &enclosure);
+
         let built = match self.built.take() {
             // Nothing the enclosure is made of moved, so neither did any of it.
             Some(previous) if previous.enclosure == enclosure => {
                 Built { config: config.clone(), reading, ..previous }
             },
             previous => {
+                self.composed = None;
                 let kernel = Kernel::new();
                 let parts = build_parts(&kernel, &enclosure, previous.map(|b| b.parts))?;
                 let (bottom, lid) = parts.finished();
@@ -172,6 +224,72 @@ impl AppBackend {
         self.built.as_ref().ok_or_else(|| "nothing built".to_string())
     }
 
+    /// Reloads and re-places the components, if anything about them moved.
+    ///
+    /// Only two things can: which footprints carry which models, and where the
+    /// two faces of the board are. Neither is what an enclosure edit changes,
+    /// which is the point — a wall thickness nudge must not re-read a megabyte
+    /// of STEP text.
+    fn update_components(
+        &mut self,
+        reading: &kicase_kicad::board::BoardReading,
+        enclosure: &kicase_model::Enclosure,
+    ) {
+        let layout = enclosure.layout;
+        let request = crate::components::plan(
+            &reading.footprints,
+            &self.project.dir,
+            layout.pcb_top,
+            layout.pcb_bottom,
+        );
+        let wanted = request.models();
+        self.loader.request(&mut self.models, &wanted);
+        self.loader.drain(&mut self.models);
+
+        if request == self.components.request && self.models.ready(&wanted) == self.components.ready
+        {
+            return;
+        }
+        self.components.request = request;
+        self.components.wanted = wanted;
+        self.merge_components();
+    }
+
+    /// Rebuilds the components part from the placements and whatever meshes
+    /// have arrived so far.
+    fn merge_components(&mut self) {
+        // Moved out so the placements can be read while the part they produce
+        // is written back.
+        let request = std::mem::take(&mut self.components.request);
+        let part =
+            kicase_model::components_part(request.placements.iter().filter_map(|placement| {
+                Some(kicase_model::ComponentInstance {
+                    transform: placement.transform,
+                    normals: placement.normals,
+                    mesh: self.models.mesh(&placement.model)?,
+                })
+            }));
+        self.components.ready = self.models.ready(&self.components.wanted);
+        self.components.request = request;
+        self.components.part = part;
+        self.composed = None;
+    }
+
+    /// The enclosure parts and the components, as one scene.
+    fn compose(&mut self) -> Arc<kicase_model::Scene> {
+        if let Some(scene) = &self.composed {
+            return scene.clone();
+        }
+        let mut scene = match self.built.as_ref() {
+            Some(built) => built.scene.clone(),
+            None => kicase_model::Scene::default(),
+        };
+        scene.parts.push(self.components.part.clone());
+        let scene = Arc::new(scene);
+        self.composed = Some(scene.clone());
+        scene
+    }
+
     pub fn config(&self) -> &EnclosureConfig {
         &self.project.config
     }
@@ -212,9 +330,8 @@ impl DesignerBackend for AppBackend {
         };
 
         // One read, one build, shared by everything below.
-        let built = match self.ensure_built(config) {
-            Ok(built) => built,
-            Err(problem) => {
+        if let Err(problem) = self.ensure_built(config) {
+            {
                 // The board may simply not be ready to build yet; the window
                 // still has to show why.
                 // Where to draw matters most here: this is the board with
@@ -228,8 +345,20 @@ impl DesignerBackend for AppBackend {
                     problems: vec![problem],
                     ..DesignerData::default()
                 });
-            },
-        };
+            }
+        }
+
+        // Taken before `built` is borrowed, since both come from `self`.
+        let component_problems: Vec<String> = self
+            .components
+            .request
+            .problems
+            .iter()
+            .cloned()
+            .chain(self.models.problems())
+            .collect();
+        let components = Some((self.components.ready, self.components.wanted.len()));
+        let built = self.built.as_ref().expect("ensure_built leaves a build in place");
 
         let enclosure = &built.enclosure;
         let reading = &built.reading;
@@ -248,9 +377,13 @@ impl DesignerBackend for AppBackend {
             ),
             dimensions: built.exterior.clone(),
             drawn_wall: enclosure.shell.wall_from_drawing.then(|| enclosure.shell.wall.to_string()),
+            components,
             ..DesignerData::default()
         };
         data.problems.extend(reading.skipped.iter().cloned());
+        // A model that is missing, unreadable or embedded is a warning and
+        // never a failed build: the enclosure is what the user came for.
+        data.problems.extend(component_problems);
         // Everything the model and the build had to say. A cut that was too
         // shallow to make is reported here and nowhere else in the window.
         data.problems.extend(built.problems.iter().cloned());
@@ -442,6 +575,25 @@ impl DesignerBackend for AppBackend {
         self.watcher.as_ref().is_some_and(|w| w.take_change())
     }
 
+    fn models_arrived(&mut self) -> Option<ModelProgress> {
+        if !self.loader.drain(&mut self.models) {
+            return None;
+        }
+        self.merge_components();
+        Some(ModelProgress {
+            loaded: self.components.ready,
+            total: self.components.wanted.len(),
+            problems: self
+                .components
+                .request
+                .problems
+                .iter()
+                .cloned()
+                .chain(self.models.problems())
+                .collect(),
+        })
+    }
+
     fn set_repaint_waker(&mut self, waker: std::sync::Arc<dyn Fn() + Send + Sync>) {
         // Restart the watcher so it can wake the window directly. Until now it
         // has only been queuing changes for the next poll.
@@ -449,19 +601,25 @@ impl DesignerBackend for AppBackend {
             crate::project::Origin::Live(_) => crate::watcher::WatchSource::LiveKiCad,
             crate::project::Origin::File(path) => crate::watcher::WatchSource::File(path.clone()),
         };
-        self.watcher = Some(crate::watcher::BoardWatcher::start(source, Some(waker)));
+        self.watcher = Some(crate::watcher::BoardWatcher::start(source, Some(waker.clone())));
+        // The loader wakes the window too: models arrive over the next second
+        // or so, and a component that appears only when something else happens
+        // to repaint looks like a bug. It is handed the waker rather than
+        // restarted with it, so the models already in flight are not stranded.
+        self.loader.set_waker(waker);
         self.source_for_waker = Some(());
     }
 
-    fn scene(&mut self, config: &EnclosureConfig) -> Result<kicase_model::Scene, String> {
+    fn scene(&mut self, config: &EnclosureConfig) -> Result<Arc<kicase_model::Scene>, String> {
         self.apply(config);
         // Built during the refresh that always precedes this. Reading the board
         // again to prove it is an IPC round trip to KiCad for an answer already
         // in hand.
-        if let Some(built) = self.built.as_ref().filter(|built| built.config == *config) {
-            return Ok(built.scene.clone());
+        let fresh = self.built.as_ref().is_some_and(|built| built.config == *config);
+        if !fresh {
+            self.ensure_built(config)?;
         }
-        Ok(self.ensure_built(config)?.scene.clone())
+        Ok(self.compose())
     }
 }
 

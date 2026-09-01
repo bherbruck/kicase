@@ -520,6 +520,17 @@ impl Transform3d {
             + self.translation
     }
 
+    /// Determinant of the linear part.
+    ///
+    /// Negative means the transform mirrors, which reverses the winding of
+    /// every triangle it is applied to.
+    pub fn determinant(&self) -> f64 {
+        let (x, y, z) = (self.x_axis, self.y_axis, self.z_axis);
+        x.x.mm() * (y.y.mm() * z.z.mm() - y.z.mm() * z.y.mm())
+            - y.x.mm() * (x.y.mm() * z.z.mm() - x.z.mm() * z.y.mm())
+            + z.x.mm() * (x.y.mm() * y.z.mm() - x.z.mm() * y.y.mm())
+    }
+
     /// Applies only the rotational part.
     pub fn apply_vector(&self, vector: Vector3) -> Vector3 {
         self.x_axis * vector.x.mm() + self.y_axis * vector.y.mm() + self.z_axis * vector.z.mm()

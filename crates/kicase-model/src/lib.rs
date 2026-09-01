@@ -23,5 +23,8 @@ pub use fit::{check_fit, CutRecord, FitCheck, FitStatus};
 pub use model::{
     AddedSolid, CutPlacement, Cutout, Enclosure, Lid, Orphan, OrphanKind, Shell, SideDatum, ZLayout,
 };
-pub use scene::{build_scene, build_scene_of, PartId, Scene, ScenePart, DISPLAY_TOLERANCE};
+pub use scene::{
+    build_scene, build_scene_of, components_part, ComponentInstance, PartId, Scene, ScenePart,
+    DISPLAY_TOLERANCE,
+};
 pub use source::{BoardGraphic, BoardSource, KiCadUuid, LayerRole, MountingHole};

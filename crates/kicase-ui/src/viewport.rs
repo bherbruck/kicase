@@ -140,11 +140,18 @@ impl Default for Viewport {
 
 impl Viewport {
     /// Hands the viewport a freshly built scene.
-    pub fn set_scene(&mut self, scene: Scene) {
+    ///
+    /// The same scene twice costs nothing: the version is what makes the GL
+    /// side release and re-upload every buffer, so it only moves when the
+    /// triangles actually did.
+    pub fn set_scene(&mut self, scene: Arc<Scene>) {
+        if self.scene.as_ref().is_some_and(|current| Arc::ptr_eq(current, &scene)) {
+            return;
+        }
         let bounds = scene.bounds();
         let first = self.scene.is_none();
         self.bounds = bounds;
-        self.scene = Some(Arc::new(scene));
+        self.scene = Some(scene);
         self.version += 1;
         if first {
             if let Some(bounds) = self.bounds {

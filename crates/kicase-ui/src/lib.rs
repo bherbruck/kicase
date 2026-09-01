@@ -95,11 +95,33 @@ pub struct DesignerData {
     /// called User.1 and friends however they are set up — which makes saying
     /// plainly where to draw the difference between usable and not.
     pub layers: Vec<(String, String)>,
+    /// Component models loaded so far, and how many the board asks for.
+    ///
+    /// Reading a connector model costs a few hundred milliseconds, so they
+    /// arrive over the first second or so. Saying "12/58" while that happens is
+    /// more honest than a spinner, because a component is decoration and a
+    /// partial answer is a usable one.
+    pub components: Option<(usize, usize)>,
     /// Set while the board has no enclosure layers yet. Setting them up is the
     /// one thing that has to happen before anything can be drawn, so the
     /// window says so at the top rather than leaving it to a button in a row
     /// of five at the bottom of a scrolling panel.
     pub needs_setup: bool,
+    pub problems: Vec<String>,
+}
+
+/// What a batch of arriving component models did.
+///
+/// Carries the problems as well as the count, because a model that fails to
+/// load fails on the loader thread, long after the refresh that would otherwise
+/// have collected the complaint. Reporting only the count is how a broken model
+/// ends up silently absent from the viewport.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ModelProgress {
+    pub loaded: usize,
+    pub total: usize,
+    /// Everything that has gone wrong loading models so far, not only in this
+    /// batch, so the window can simply replace what it was showing.
     pub problems: Vec<String>,
 }
 
@@ -154,9 +176,16 @@ pub trait DesignerBackend {
     /// Persists settings without generating geometry.
     fn save(&mut self, config: &EnclosureConfig) -> Result<(), String>;
 
-    /// Builds the displayable scene: the board and both enclosure parts,
-    /// triangulated. Called after every rebuild so the viewport stays in step.
-    fn scene(&mut self, config: &EnclosureConfig) -> Result<kicase_model::scene::Scene, String>;
+    /// Builds the displayable scene: the board, both enclosure parts and the
+    /// components, triangulated. Called after every rebuild so the viewport
+    /// stays in step.
+    ///
+    /// Shared rather than owned: this is called on every refresh, and once
+    /// components are in it a deep copy per keystroke is real work.
+    fn scene(
+        &mut self,
+        config: &EnclosureConfig,
+    ) -> Result<std::sync::Arc<kicase_model::scene::Scene>, String>;
 
     /// True when the board has changed since the last call.
     ///
@@ -164,6 +193,17 @@ pub trait DesignerBackend {
     /// up here without anyone pressing anything.
     fn board_changed(&mut self) -> bool {
         false
+    }
+
+    /// Reports component models that finished loading since the last call, as
+    /// `ModelProgress`.
+    ///
+    /// Models are read on a background thread — one connector is a few hundred
+    /// milliseconds — so they land between refreshes rather than during one.
+    /// Cheap enough to ask every frame: it is a channel poll, and it returns
+    /// `None` when nothing arrived.
+    fn models_arrived(&mut self) -> Option<ModelProgress> {
+        None
     }
 
     /// Hands the backend a way to wake the window.

@@ -211,6 +211,21 @@ impl eframe::App for DesignerApp {
         if self.live && self.backend.board_changed() {
             self.refresh();
         }
+        // Component models arrive over the first second or so. Only the scene
+        // and the count change, so this costs a channel poll and a merge rather
+        // than another read of the board.
+        if let Some(progress) = self.backend.models_arrived() {
+            self.data.components = Some((progress.loaded, progress.total));
+            // A model that failed to load failed on the loader thread, so this
+            // is the moment the complaint exists. Waiting for the next refresh
+            // to collect it is how a broken model goes missing in silence.
+            for problem in progress.problems {
+                if !self.data.problems.contains(&problem) {
+                    self.data.problems.push(problem);
+                }
+            }
+            self.reload_scene();
+        }
 
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -372,7 +387,16 @@ impl DesignerApp {
             ui.label(RichText::new("Show").strong());
             for part in kicase_model::scene::PartId::ALL {
                 let visible = self.viewport.visible.entry(part).or_insert(true);
-                ui.checkbox(visible, part.label());
+                let components = part == kicase_model::scene::PartId::Components;
+                let label = match (components, self.data.components) {
+                    // Models arrive over the first second or so; say how far
+                    // along rather than leaving a checkbox that does nothing.
+                    (true, Some((ready, total))) if ready < total => {
+                        format!("{} ({ready}/{total})", part.label())
+                    },
+                    _ => part.label().to_string(),
+                };
+                ui.checkbox(visible, label);
             }
 
             ui.separator();

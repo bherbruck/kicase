@@ -2,6 +2,7 @@
 //! between the designer window and everything else.
 
 pub mod backend;
+pub mod components;
 pub mod pipeline;
 pub mod project;
 pub mod watcher;

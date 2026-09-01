@@ -259,6 +259,7 @@ fn run(cli: &Cli) -> Result<()> {
                     "pcb" => Some(kicase_model::PartId::Pcb),
                     "bottom" => Some(kicase_model::PartId::Bottom),
                     "lid" => Some(kicase_model::PartId::Lid),
+                    "components" => Some(kicase_model::PartId::Components),
                     _ => None,
                 })
                 .collect();

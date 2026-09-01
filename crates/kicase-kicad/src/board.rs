@@ -97,6 +97,32 @@ pub struct FootprintInfo {
     pub reference: Option<String>,
     /// Position in enclosure coordinates (millimetres, Y up).
     pub position: Point2,
+    /// The footprint's own `at` angle in degrees, counter-clockwise once Y is
+    /// up — which is the sense KiCad's own drill and STEP exports agree on.
+    pub rotation: f64,
+    /// True when the footprint sits on `B.Cu`, i.e. under the board.
+    pub on_back: bool,
+    /// The 3D shapes the footprint points at, in the order it lists them.
+    ///
+    /// Hidden models are dropped here rather than carried and filtered later:
+    /// a model KiCad does not draw is not a component.
+    pub models: Vec<ModelRef>,
+}
+
+/// One `(model ...)` entry, exactly as the board wrote it.
+///
+/// The path is left unresolved on purpose. `${KIPRJMOD}` means the project
+/// directory, which this crate does not know and should not learn: resolution
+/// belongs to whoever opened the project.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelRef {
+    /// The reference as written, KiCad variables and all.
+    pub raw: String,
+    /// Millimetres, in the model's own axes, applied after its rotation.
+    pub offset: [f64; 3],
+    pub scale: [f64; 3],
+    /// Degrees about the model's own X, Y and Z.
+    pub rotate: [f64; 3],
 }
 
 /// Everything read out of one board document.
@@ -340,6 +366,9 @@ fn read_footprint(node: &Node, source: &mut BoardSource, footprints: &mut Vec<Fo
         uuid: KiCadUuid::new(node.child_string("uuid").unwrap_or_default()),
         reference: reference.clone(),
         position: point((fx, fy)),
+        rotation,
+        on_back: node.child_string("layer").is_some_and(|layer| layer.starts_with("B.")),
+        models: node.children("model").filter_map(read_model).collect(),
     });
 
     for pad in node.children("pad") {
@@ -356,11 +385,17 @@ fn read_footprint(node: &Node, source: &mut BoardSource, footprints: &mut Vec<Fo
         let Some(diameter) = drill.number(0) else { continue };
         let Some((dx, dy)) = pad.child_xy("at") else { continue };
 
-        // The pad offset is expressed in the footprint's rotated frame.
+        // The pad offset is expressed in the footprint's rotated frame, and
+        // the footprint's angle is counter-clockwise with Y *up*. In the file's
+        // Y-down frame that is the clockwise sense — the opposite of the one
+        // this used to apply, which mirrored the standoffs of every rotated
+        // multi-pad mounting footprint. Verified against `kicad-cli pcb export
+        // drill`: a footprint at (100, 50) turned 90 degrees with a pad at
+        // local (1, 0) drills at (100, 49), not (100, 51).
         let angle = rotation.to_radians();
         let (sin, cos) = angle.sin_cos();
-        let x = fx + dx * cos - dy * sin;
-        let y = fy + dx * sin + dy * cos;
+        let x = fx + dx * cos + dy * sin;
+        let y = fy - dx * sin + dy * cos;
 
         let uuid = pad.child_string("uuid").unwrap_or_default().to_string();
         source.mounting_holes.push(MountingHole {
@@ -370,6 +405,42 @@ fn read_footprint(node: &Node, source: &mut BoardSource, footprints: &mut Vec<Fo
             drill_diameter: mm(diameter),
         });
     }
+}
+
+/// Reads one `(model ...)` entry, or nothing when KiCad would not draw it.
+fn read_model(node: &Node) -> Option<ModelRef> {
+    // Both `(hide yes)` and a bare `(hide)` hide a model; only `(hide no)`
+    // does not. Confirmed by exporting each spelling: both gave board-only
+    // geometry.
+    if let Some(hide) = node.child("hide") {
+        if hide.string(0) != Some("no") {
+            return None;
+        }
+    }
+    let raw = node.string(0)?.to_string();
+
+    // Boards written by KiCad 6 and later use `(offset (xyz ...))` in
+    // millimetres. A board carried forward from KiCad 5 still says `(at (xyz
+    // ...))`, and KiCad reads *that* one as inches — measured, a footprint at
+    // x=120 with `(at (xyz 1 0 0))` puts its model at x=145.4.
+    let (offset_node, to_mm) = match node.child("offset") {
+        Some(offset) => (Some(offset), 1.0),
+        None => (node.child("at"), 25.4),
+    };
+    let offset = xyz(offset_node, [0.0; 3]).map(|value| value * to_mm);
+
+    Some(ModelRef {
+        raw,
+        offset,
+        scale: xyz(node.child("scale"), [1.0; 3]),
+        rotate: xyz(node.child("rotate"), [0.0; 3]),
+    })
+}
+
+/// The three numbers of a `(<head> (xyz a b c))` block, or `fallback`.
+fn xyz(node: Option<&Node>, fallback: [f64; 3]) -> [f64; 3] {
+    let Some(xyz) = node.and_then(|n| n.child("xyz")) else { return fallback };
+    [0, 1, 2].map(|index| xyz.number(index).unwrap_or(fallback[index]))
 }
 
 /// KiCad millimetres with Y down, to enclosure millimetres with Y up.
@@ -430,6 +501,18 @@ mod tests {
         (property "Reference" "J1")
         (pad "" np_thru_hole oval (at 1 0) (size 2 3) (drill oval 1 2) (uuid "slot-1"))
         (pad "1" smd rect (at 0 0) (size 1 1) (uuid "pad-1"))
+        (model "${KICAD9_3DMODEL_DIR}/Connector.3dshapes/USB_C.step"
+          (offset (xyz 0 0 1.5)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 -90))
+        )
+        (model "${KIPRJMOD}/hidden.step" (hide yes) (offset (xyz 0 0 0)))
+      )
+      (footprint "MountingHole:MountingHole_2.2mm"
+        (layer "B.Cu")
+        (at 100 50 90)
+        (uuid "fp3")
+        (property "Reference" "H9")
+        (pad "" np_thru_hole circle (at 1 0) (size 4 4) (drill 2.2) (uuid "hole-9"))
+        (model "legacy.wrl" (at (xyz 1 0 0)))
       )
     )"#;
 
@@ -498,7 +581,7 @@ mod tests {
     #[test]
     fn detects_circular_npth_holes_and_ignores_slots_and_smd_pads() {
         let reading = read_board(BOARD, &roles()).expect("parses");
-        assert_eq!(reading.source.mounting_holes.len(), 1);
+        assert_eq!(reading.source.mounting_holes.len(), 2);
         let hole = &reading.source.mounting_holes[0];
         assert_eq!(hole.reference.as_deref(), Some("H1"));
         assert_eq!(hole.drill_diameter, mm(3.2));
@@ -526,13 +609,60 @@ mod tests {
     #[test]
     fn records_footprint_positions_for_the_preview_lookup() {
         let reading = read_board(BOARD, &roles()).expect("parses");
-        assert_eq!(reading.footprints.len(), 2);
+        assert_eq!(reading.footprints.len(), 3);
         let h1 = reading
             .footprints
             .iter()
             .find(|f| f.reference.as_deref() == Some("H1"))
             .expect("H1 is present");
         assert_eq!(h1.position, Point2::new(mm(105.0), mm(-105.0)));
+    }
+
+    /// The oracle is KiCad itself: `kicad-cli pcb export drill` on a footprint
+    /// at (100, 50) turned 90 degrees with an `np_thru_hole` pad at local
+    /// (1, 0) emits `X100.0Y-49.0`, i.e. file coordinates (100, 49).
+    ///
+    /// Regression: the rotation used to be applied with the wrong sense, which
+    /// mirrored the hole about the footprint origin — (100, 51) here, and 2 mm
+    /// out for a 1 mm pad offset.
+    #[test]
+    fn a_rotated_mounting_hole_lands_where_kicad_drills_it() {
+        let reading = read_board(BOARD, &roles()).expect("parses");
+        let hole = reading
+            .source
+            .mounting_holes
+            .iter()
+            .find(|h| h.reference.as_deref() == Some("H9"))
+            .expect("H9 is present");
+        assert_eq!(hole.position, Point2::new(mm(100.0), mm(-49.0)));
+    }
+
+    #[test]
+    fn reads_the_side_rotation_and_models_of_a_footprint() {
+        let reading = read_board(BOARD, &roles()).expect("parses");
+        let j1 = reading
+            .footprints
+            .iter()
+            .find(|f| f.reference.as_deref() == Some("J1"))
+            .expect("J1 is present");
+        assert_eq!(j1.rotation, 90.0);
+        assert!(!j1.on_back);
+        // The second model is hidden, so KiCad does not draw it and neither
+        // does KiCase.
+        assert_eq!(j1.models.len(), 1);
+        assert_eq!(j1.models[0].raw, "${KICAD9_3DMODEL_DIR}/Connector.3dshapes/USB_C.step");
+        assert_eq!(j1.models[0].offset, [0.0, 0.0, 1.5]);
+        assert_eq!(j1.models[0].scale, [1.0, 1.0, 1.0]);
+        assert_eq!(j1.models[0].rotate, [0.0, 0.0, -90.0]);
+
+        let h9 = reading
+            .footprints
+            .iter()
+            .find(|f| f.reference.as_deref() == Some("H9"))
+            .expect("H9 is present");
+        assert!(h9.on_back);
+        // A KiCad 5 board writes `(at (xyz ...))` and means inches.
+        assert_eq!(h9.models[0].offset, [25.4, 0.0, 0.0]);
     }
 
     #[test]
@@ -566,6 +696,18 @@ mod tests {
                  (layer \"F.Cu\") (net 3) (uuid \"net-name-{index}-with-some-length\"))\n"
             ));
         }
+        // Footprints carrying models, because FOOTPRINT_KEEP is the other half
+        // of what makes this fast and a board of pure tracks cannot see a
+        // regression in it.
+        for index in 0..2_000 {
+            board.push_str(&format!(
+                "(footprint \"lib:part-{index}\" (layer \"F.Cu\") (at {index} 20 90)\n\
+                 (uuid \"fp-{index}\") (property \"Reference\" \"R{index}\")\n\
+                 (fp_line (start 0 0) (end 1 0) (layer \"F.SilkS\") (uuid \"s{index}\"))\n\
+                 (model \"${{KICAD9_3DMODEL_DIR}}/Resistor_SMD.3dshapes/R_0402.step\"\n\
+                   (offset (xyz 0 0 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))\n)\n"
+            ));
+        }
         board.push_str("(gr_line (start 0 0) (end 10 0) (layer \"Edge.Cuts\") (uuid \"e1\"))\n)");
 
         let started = std::time::Instant::now();
@@ -573,6 +715,11 @@ mod tests {
         let taken = started.elapsed();
 
         assert_eq!(reading.source.board_outline.len(), 1, "the one graphic was found");
+        assert_eq!(reading.footprints.len(), 2_000, "every footprint was read");
+        assert!(
+            reading.footprints.iter().all(|fp| fp.models.len() == 1),
+            "every footprint kept its model reference"
+        );
         assert!(
             taken < std::time::Duration::from_secs(5),
             "reading a {} KB board took {taken:?}",

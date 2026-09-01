@@ -223,7 +223,18 @@ pub struct Selection {
 /// just as irrelevant as a track.
 pub fn parse_selected(text: &str, keep: &[&str]) -> Result<Selection, ParseError> {
     /// Inside a footprint, only these carry anything KiCase uses.
-    const FOOTPRINT_KEEP: &[&str] = &["at", "uuid", "property", "pad", "attr"];
+    ///
+    /// `layer` is the only thing in the file that says which side a footprint
+    /// is on, and `model` is the reference to its 3D shape.
+    ///
+    /// Every entry here has a price, and it is not noise: adding those two cost
+    /// about 2 us per footprint, measured by interleaving two binaries that
+    /// differed only in this list — +15% on a 43 MB, 866-footprint board and
+    /// +31% on a synthetic one with 2000. Both are far inside the budget, and
+    /// both are real. Anything added here should be measured the same way,
+    /// because the whole reason this list is short is that a board with 40,000
+    /// tracks used to take five minutes to open.
+    const FOOTPRINT_KEEP: &[&str] = &["at", "uuid", "property", "pad", "attr", "layer", "model"];
 
     let bytes = text.as_bytes();
     let mut pos = 0usize;

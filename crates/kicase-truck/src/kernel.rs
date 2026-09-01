@@ -600,7 +600,7 @@ fn raw_polygon(body: &Solid, tolerance: Length) -> PolygonMesh {
 
 /// Appends a truck mesh to our neutral one, flattening truck's separate
 /// position and normal index streams into a single interleaved buffer.
-fn append_triangles(out: &mut TriangleMesh, mesh: &PolygonMesh) {
+pub(crate) fn append_triangles(out: &mut TriangleMesh, mesh: &PolygonMesh) {
     let positions = mesh.positions();
     let normals = mesh.normals();
     let mut seen: std::collections::HashMap<(usize, Option<usize>), u32> =

@@ -7,5 +7,7 @@
 mod convert;
 mod cylinders;
 mod kernel;
+mod step_import;
 
 pub use kernel::{TruckKernel, TruckProfile, TruckSolid};
+pub use step_import::{load_step_mesh, COMPONENT_MESH_TOLERANCE};
