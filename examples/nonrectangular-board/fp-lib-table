@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "KiCase")(type "KiCad")(uri "${KIPRJMOD}/.enclosure/kicase.pretty")(options "")(descr "KiCase enclosure preview"))
+)

@@ -52,6 +52,18 @@ const MIN_TOLERANCE: f64 = 5.0e-6;
 /// two orders past what can be cut, because below the last rung "they overlap"
 /// and "they merely touch" are the same observation — and a cut that is too
 /// shallow to make has to be reported, not dropped in silence.
+/// How many contact points [`penetration_by`] probes.
+const CONTACT_PROBES: usize = 256;
+
+/// The reach that settles whether two printed parts collide.
+///
+/// Only the coarsest rung of [`DEPTH_LADDER`], because the finer ones exist to
+/// resolve a shallow cut and nothing else. An overlap under two hundredths of a
+/// millimetre is not an interference anyone can print, measure or care about,
+/// and trying the eleven finer rungs against parts that are merely touching is
+/// pure cost for an answer that cannot change.
+const INTERFERENCE_LADDER: [f64; 1] = [2e-2];
+
 const DEPTH_LADDER: [f64; 12] =
     [2e-2, 5e-3, 1e-3, 5e-4, 2e-4, 1e-4, 5e-5, 2e-5, 1e-5, 5e-6, 2e-6, 1e-6];
 
@@ -220,7 +232,7 @@ impl CadKernel for TruckKernel {
                 // lost by it: this asks whether two printed parts collide, and
                 // an overlap thinner than the mesh that found it is not a
                 // collision anyone can print, let alone measure.
-                if penetration(left, right).is_none() {
+                if penetration_by(left, right, &INTERFERENCE_LADDER).is_none() {
                     continue;
                 }
                 let common = boolean("intersect", monstertruck_solid::and, left, right)?;
@@ -456,7 +468,16 @@ fn penetration_by(a: &Solid, b: &Solid, ladder: &[f64]) -> Option<f64> {
         let whole = buried(&left, &right) || buried(&right, &left);
         return whole.then_some(f64::INFINITY);
     }
-    let points: Vec<MtPoint3> = contact.iter().map(|(from, to)| from.midpoint(*to)).collect();
+    // Sampled, not exhaustive. Two bodies that genuinely share volume say so at
+    // a great many of their contact points; the expensive case is the opposite
+    // one, where they merely touch and so no point ever answers, and every rung
+    // is tried against every point. A lid meeting a rounded shell touches in
+    // seventeen thousand places, which turned one fitment check into six
+    // minutes. Below the cap every point is used, so a small interference —
+    // which is exactly the case that has few contacts — is never sampled away.
+    let stride = contact.len().div_ceil(CONTACT_PROBES).max(1);
+    let points: Vec<MtPoint3> =
+        contact.iter().step_by(stride).map(|(from, to)| from.midpoint(*to)).collect();
     ladder.iter().copied().find(|reach| {
         points
             .iter()

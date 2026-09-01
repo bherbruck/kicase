@@ -464,6 +464,37 @@ fn an_island_inside_an_island_leaves_both_walls_standing() {
     assert_eq!(kernel.solid_count(&solids.bottom).expect("countable"), 1);
 }
 
+/// Fitment checking has to be quick enough to sit in a rebuild, and the shape
+/// that makes it slow is the ordinary one: a lid and a shell that meet all the
+/// way round without interfering. Every contact between them is a place the
+/// interference search has to look and never find anything, and on a rounded
+/// outline there are tens of thousands of them. Left unbounded that search took
+/// six minutes on this very board, which read as the whole application hanging.
+#[test]
+fn checking_a_rounded_case_for_interference_is_quick() {
+    let config = EnclosureConfig::default();
+    let source = fixtures::rounded_board();
+    let (kernel, solids) = build_enclosure(&config, &source);
+    let enclosure = Enclosure::resolve(&config, &source).expect("resolves");
+
+    let started = std::time::Instant::now();
+    let report = kicase_model::fit::check_fit(
+        &kernel,
+        &enclosure,
+        &solids.bottom,
+        &solids.lid,
+        &solids.cuts,
+        &[],
+    )
+    .expect("a fitment report");
+    let taken = started.elapsed();
+
+    assert!(!report.is_empty(), "the report must actually contain checks");
+    // Generous next to the ~1 s this takes, and still three hundred times under
+    // the six minutes it used to be: this guards the complexity, not the clock.
+    assert!(taken < std::time::Duration::from_secs(30), "checking a rounded case took {taken:?}");
+}
+
 /// A lid driven into the wall must never be reported as fine. Whether the
 /// kernel measures the overlap or admits it cannot, the check that names the
 /// lid has to say something is up — and the one thing it may never do is cost
