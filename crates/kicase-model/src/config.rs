@@ -282,7 +282,7 @@ impl EnclosureConfig {
         // the project it is meant to fix is what fails. `Enclosure::resolve`
         // validates at the point of building, which is where the answer
         // actually matters.
-        Ok(toml::from_str(text).map_err(|e| ModelError::Parse(e.to_string()))?)
+        toml::from_str(text).map_err(|e| ModelError::Parse(e.to_string()))
     }
 
     pub fn to_toml(&self) -> Result<String> {
