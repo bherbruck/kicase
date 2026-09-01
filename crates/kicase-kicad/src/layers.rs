@@ -249,25 +249,37 @@ mod tests {
 }
 
 /// Layers whose name on the board does not match the one KiCase gave the role,
-/// as `(canonical, wanted)` pairs.
+/// as `(canonical, wanted)` pairs, excluding any it would be rude to touch.
 ///
 /// The names are cosmetic — KiCase binds by canonical name, so a board whose
 /// layers are still called `User.1` works exactly as well. They are worth
-/// setting anyway, because a layer called `Enclosure.Cuts` tells you what it is
+/// setting anyway, because a layer called `Enclosure.Cuts` says what it is
 /// while `User.3` does not, and the layer *is* the instruction here.
+///
+/// Two things are never renamed. A layer someone has already named something
+/// of their own keeps that name: the board is theirs, and a label they chose
+/// carries meaning this cannot see. And when `mapping_is_claimed` is false the
+/// mapping is only a default guess — nothing has picked free layers yet — so a
+/// layer with anything drawn on it is left alone as well, since the guess may
+/// be pointing straight at someone else's work.
 pub fn misnamed_layers(
     mapping: &LayerMapping,
     layers: &[crate::board::BoardLayer],
+    used: &[String],
+    mapping_is_claimed: bool,
 ) -> Vec<(String, String)> {
     mapping
         .all()
         .iter()
         .zip(LAYER_DISPLAY_NAMES)
         .filter(|(canonical, wanted)| {
-            layers
-                .iter()
-                .find(|layer| layer.canonical == **canonical)
-                .is_none_or(|layer| layer.display.as_deref() != Some(*wanted))
+            let on_board = layers.iter().find(|layer| layer.canonical == **canonical);
+            match on_board.and_then(|layer| layer.display.as_deref()) {
+                Some(name) if name == *wanted => false,
+                // Someone named this themselves. Leave it.
+                Some(name) if !LAYER_DISPLAY_NAMES.contains(&name) => false,
+                _ => mapping_is_claimed || !used.iter().any(|drawn| drawn == *canonical),
+            }
         })
         .map(|(canonical, wanted)| (canonical.to_string(), wanted.to_string()))
         .collect()
@@ -286,23 +298,61 @@ mod misnamed_tests {
         }
     }
 
-    #[test]
-    fn a_board_that_names_every_layer_needs_nothing() {
-        let mapping = LayerMapping::default();
-        let layers: Vec<BoardLayer> = mapping
+    fn named_by_kicase() -> Vec<BoardLayer> {
+        LayerMapping::default()
             .all()
             .iter()
             .zip(LAYER_DISPLAY_NAMES)
             .map(|(canonical, display)| layer(canonical, Some(display)))
-            .collect();
-        assert!(misnamed_layers(&mapping, &layers).is_empty());
+            .collect()
+    }
+
+    #[test]
+    fn a_board_that_names_every_layer_needs_nothing() {
+        let mapping = LayerMapping::default();
+        assert!(misnamed_layers(&mapping, &named_by_kicase(), &[], true).is_empty());
+    }
+
+    /// The board belongs to whoever drew on it. A layer they named themselves
+    /// keeps that name, whatever KiCase would rather call it.
+    #[test]
+    fn a_layer_someone_else_named_is_left_alone() {
+        let mapping = LayerMapping::default();
+        let layers = vec![layer("User.1", Some("Mechanical")), layer("User.2", None)];
+        let missing = misnamed_layers(&mapping, &layers, &[], true);
+        assert!(
+            !missing.iter().any(|(canonical, _)| canonical == "User.1"),
+            "renamed a layer that already had someone else's name: {missing:?}"
+        );
+        assert!(missing.iter().any(|(canonical, _)| canonical == "User.2"));
+    }
+
+    /// Before anything has claimed layers the mapping is only a default guess,
+    /// so a layer with drawings on it might be someone else's work.
+    #[test]
+    fn an_unclaimed_mapping_never_touches_a_layer_with_drawings_on_it() {
+        let mapping = LayerMapping::default();
+        let layers = vec![layer("User.1", None), layer("User.2", None)];
+        let used = vec!["User.1".to_string()];
+
+        let guessing = misnamed_layers(&mapping, &layers, &used, false);
+        assert!(
+            !guessing.iter().any(|(canonical, _)| canonical == "User.1"),
+            "a guessed mapping renamed an occupied layer: {guessing:?}"
+        );
+        assert!(guessing.iter().any(|(canonical, _)| canonical == "User.2"));
+
+        // Once the layers really were claimed, drawings on them are the
+        // enclosure the user drew there, and naming them is the whole point.
+        let claimed = misnamed_layers(&mapping, &layers, &used, true);
+        assert!(claimed.iter().any(|(canonical, _)| canonical == "User.1"));
     }
 
     #[test]
     fn an_unnamed_layer_is_reported_with_the_name_it_should_have() {
         let mapping = LayerMapping::default();
         let layers = vec![layer("User.1", None)];
-        let missing = misnamed_layers(&mapping, &layers);
+        let missing = misnamed_layers(&mapping, &layers, &[], true);
         assert!(missing.contains(&("User.1".to_string(), "Enclosure".to_string())));
         // The five that are not on the board at all are missing too.
         assert_eq!(missing.len(), 6);
@@ -313,15 +363,10 @@ mod misnamed_tests {
     #[test]
     fn a_layer_named_for_another_role_still_counts_as_misnamed() {
         let mapping = LayerMapping::default();
-        let mut layers: Vec<BoardLayer> = mapping
-            .all()
-            .iter()
-            .zip(LAYER_DISPLAY_NAMES)
-            .map(|(canonical, display)| layer(canonical, Some(display)))
-            .collect();
+        let mut layers = named_by_kicase();
         layers[3].display = Some("Enclosure.Solids".to_string());
         assert_eq!(
-            misnamed_layers(&mapping, &layers),
+            misnamed_layers(&mapping, &layers, &[], true),
             vec![("User.4".to_string(), "Enclosure.Top".to_string())]
         );
     }

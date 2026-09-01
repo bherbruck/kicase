@@ -190,12 +190,16 @@ impl DesignerBackend for AppBackend {
         let config_snapshot = self.project.config.clone();
         let needs_setup = self.project.is_new;
         let layers = layer_roles(&config_snapshot);
-        let board_layers = match self.project.read_board() {
-            Ok(reading) => reading.layers,
-            Err(_) => Vec::new(),
+        let (board_layers, drawn_on) = match self.project.read_board() {
+            Ok(reading) => (reading.layers, reading.used_layers),
+            Err(_) => (Vec::new(), Vec::new()),
         };
-        let misnamed_layers =
-            kicase_kicad::layers::misnamed_layers(&config_snapshot.layers, &board_layers);
+        let misnamed_layers = kicase_kicad::layers::misnamed_layers(
+            &config_snapshot.layers,
+            &board_layers,
+            &drawn_on,
+            !needs_setup,
+        );
 
         // One read, one build, shared by everything below.
         let built = match self.ensure_built(config) {
@@ -357,8 +361,15 @@ impl DesignerBackend for AppBackend {
         self.apply(config);
         let board = self.project.board_file().map_err(|e| e.to_string())?;
         let reading = self.project.read_board().map_err(|e| e.to_string())?;
-        let wanted =
-            kicase_kicad::layers::misnamed_layers(&self.project.config.layers, &reading.layers);
+        // The mapping is only trustworthy once something has claimed layers;
+        // until then it is the default guess and must not touch occupied ones.
+        let claimed = !self.project.is_new;
+        let wanted = kicase_kicad::layers::misnamed_layers(
+            &self.project.config.layers,
+            &reading.layers,
+            &reading.used_layers,
+            claimed,
+        );
         if wanted.is_empty() {
             return Ok(ActionReport::ok("The layers are already named"));
         }
