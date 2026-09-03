@@ -340,11 +340,14 @@ impl EnclosureConfig {
 
         // Everything is measured from the bottom of the case, so these are the
         // orderings that have to hold for the case to exist at all.
-        if self.shell.pcb_height <= self.shell.floor {
+        // Equal is fine and common: the board rests directly on the floor,
+        // which is what a case without standoffs looks like. Only a board sunk
+        // into the floor is impossible.
+        if self.shell.pcb_height < self.shell.floor {
             return Err(ModelError::ImpossibleStack {
                 detail: format!(
-                    "the PCB sits {} above the bottom of the case, which is at or below the \
-                     {} floor. Raise the PCB height.",
+                    "the PCB sits {} above the bottom of the case, inside the {} floor. \
+                     Raise the PCB height to at least the floor thickness.",
                     self.shell.pcb_height, self.shell.floor
                 ),
             });
@@ -481,6 +484,24 @@ mod tests {
         let config = EnclosureConfig::from_toml(text).expect("a bad datum still loads");
         let err = config.validate().expect_err("dangling datum must fail to validate");
         assert!(matches!(err, ModelError::UnknownDatum { .. }), "got {err:?}");
+    }
+
+    /// A board resting on the floor is an ordinary case, not an impossible
+    /// one. This was rejected, which left a real project unable to build and
+    /// nothing obviously wrong with its numbers to explain why.
+    #[test]
+    fn a_board_resting_on_the_floor_is_allowed() {
+        let text = "version = 1\n\n[shell]\nfloor = 2.0\npcb_height = 2.0\n";
+        let config = EnclosureConfig::from_toml(text).expect("loads");
+        config.validate().expect("a board sitting on the floor must be buildable");
+    }
+
+    #[test]
+    fn rejects_a_board_sunk_into_the_floor() {
+        let text = "version = 1\n\n[shell]\nfloor = 2.0\npcb_height = 1.5\n";
+        let config = EnclosureConfig::from_toml(text).expect("loads");
+        let err = config.validate().expect_err("a board inside the floor must fail");
+        assert!(matches!(err, ModelError::ImpossibleStack { .. }), "got {err:?}");
     }
 
     #[test]

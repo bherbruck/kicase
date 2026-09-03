@@ -591,9 +591,9 @@ fn a_project_that_cannot_build_still_opens_and_says_why() {
     let mut project = Project::open_file(&board).expect("opens");
     pipeline::init(&mut project).expect("initializes");
 
-    // The PCB sitting inside the floor: buildable settings, impossible case.
+    // The PCB sunk inside the floor: parseable settings, impossible case.
     project.config.shell.floor = mm(2.0);
-    project.config.shell.pcb_height = mm(2.0);
+    project.config.shell.pcb_height = mm(1.0);
     project.save_config().expect("writes the settings");
 
     // Re-open from disk, which is what pressing the toolbar button does.
@@ -608,7 +608,7 @@ fn a_project_that_cannot_build_still_opens_and_says_why() {
         data.problems
     );
     // And the setting that caused it is still there to be corrected.
-    assert_eq!(config.shell.pcb_height, mm(2.0));
+    assert_eq!(config.shell.pcb_height, mm(1.0));
 }
 
 /// A model that exists but is not readable fails on the loader thread, long
